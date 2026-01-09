@@ -50,6 +50,7 @@
         const anos = Object.keys(anoStats).sort();
         const responsaveis = Object.keys(respStats).filter(r => r !== 'Não Atribuído' && r !== 'NBTN').sort();
         
+        // CORREÇÃO 1: Filtros atualizam dinamicamente
         const ordensFiltradas = useMemo(() => {
             let filtradas = ordens;
             if (anoFiltro) filtradas = filtradas.filter(o => o.ano === anoFiltro);
@@ -60,16 +61,24 @@
             return filtradas;
         }, [anoFiltro, responsavelFiltro, concelhoFiltro, statusFiltro, pesquisaOrdem]);
 
-        const statsAno = useMemo(() => {
-            const ordensAno = ordens.filter(o => o.ano === anoFiltro);
+        // Stats baseadas nas ordens FILTRADAS (não só no ano)
+        const statsAtual = useMemo(() => {
+            let ordensBase = ordens.filter(o => o.ano === anoFiltro);
+            
+            // Aplicar filtros progressivamente
+            if (responsavelFiltro) ordensBase = ordensBase.filter(o => o.responsavel === responsavelFiltro);
+            if (concelhoFiltro) ordensBase = ordensBase.filter(o => o.concelho === concelhoFiltro);
+            if (statusFiltro) ordensBase = ordensBase.filter(o => o.status === statusFiltro);
+            
             const byResp = {}, byConcelho = {}, byStatus = {};
-            ordensAno.forEach(o => {
+            ordensBase.forEach(o => {
                 byResp[o.responsavel] = (byResp[o.responsavel] || 0) + 1;
                 byConcelho[o.concelho] = (byConcelho[o.concelho] || 0) + 1;
                 byStatus[o.status] = (byStatus[o.status] || 0) + 1;
             });
-            return { byResp, byConcelho, byStatus, total: ordensAno.length };
-        }, [anoFiltro]);
+            
+            return { byResp, byConcelho, byStatus, total: ordensBase.length };
+        }, [anoFiltro, responsavelFiltro, concelhoFiltro, statusFiltro]);
 
         const concelhos = useMemo(() => {
             if (!responsavelFiltro) return [];
@@ -80,16 +89,35 @@
 
         const statusUnicos = [...new Set(ordens.map(o => o.status))].sort();
 
+        // CORREÇÃO 2: Export Excel REAL (formato .xls com colunas)
         const exportarExcel = () => {
             const headers = ['N.º Ordem', 'Status', 'Tipo de Ordem', 'Ano', 'Concelho', 'Responsável', 'CT'];
-            const rows = ordensFiltradas.map(o => [o.ordem, o.status, o.texto_breve, o.ano, o.concelho, o.responsavel, o.ct]);
-            let csvContent = headers.join('\t') + '\n';
-            rows.forEach(row => { csvContent += row.join('\t') + '\n'; });
-            const blob = new Blob([csvContent], { type: 'text/csv;charset=utf-8;' });
+            
+            // Criar HTML table
+            let html = '<table border="1"><thead><tr>';
+            headers.forEach(h => { html += `<th>${h}</th>`; });
+            html += '</tr></thead><tbody>';
+            
+            ordensFiltradas.forEach(o => {
+                html += '<tr>';
+                html += `<td>${o.ordem}</td>`;
+                html += `<td>${o.status}</td>`;
+                html += `<td>${o.texto_breve}</td>`;
+                html += `<td>${o.ano}</td>`;
+                html += `<td>${o.concelho}</td>`;
+                html += `<td>${o.responsavel}</td>`;
+                html += `<td>${o.ct}</td>`;
+                html += '</tr>';
+            });
+            
+            html += '</tbody></table>';
+            
+            // Criar blob como .xls (Excel reconhece HTML tables)
+            const blob = new Blob([html], { type: 'application/vnd.ms-excel' });
             const link = document.createElement('a');
             const url = URL.createObjectURL(blob);
             link.setAttribute('href', url);
-            link.setAttribute('download', `ordens_uo_lisboa_${new Date().toISOString().split('T')[0]}.csv`);
+            link.setAttribute('download', `ordens_uo_lisboa_${new Date().toISOString().split('T')[0]}.xls`);
             link.style.visibility = 'hidden';
             document.body.appendChild(link);
             link.click();
@@ -128,8 +156,6 @@
                 )
             ),
 
-
-
             // Gráfico de Evolução com Chart.js
             React.createElement('div', { className: 'bg-white rounded-lg shadow p-6 mb-6 border-2 border-gray-200' },
                 React.createElement('h2', { className: 'text-xl font-semibold text-gray-800 mb-4' }, '📈 Evolução Temporal de Ordens'),
@@ -157,9 +183,7 @@
                                         responsive: true,
                                         maintainAspectRatio: false,
                                         plugins: {
-                                            legend: {
-                                                display: false
-                                            },
+                                            legend: { display: false },
                                             tooltip: {
                                                 backgroundColor: '#000',
                                                 titleColor: '#facc15',
@@ -182,25 +206,13 @@
                                                     callback: function(value) {
                                                         return value.toLocaleString();
                                                     },
-                                                    font: {
-                                                        size: 12,
-                                                        weight: 'bold'
-                                                    }
+                                                    font: { size: 12, weight: 'bold' }
                                                 },
-                                                grid: {
-                                                    color: '#e5e7eb'
-                                                }
+                                                grid: { color: '#e5e7eb' }
                                             },
                                             x: {
-                                                ticks: {
-                                                    font: {
-                                                        size: 13,
-                                                        weight: 'bold'
-                                                    }
-                                                },
-                                                grid: {
-                                                    display: false
-                                                }
+                                                ticks: { font: { size: 13, weight: 'bold' } },
+                                                grid: { display: false }
                                             }
                                         }
                                     }
@@ -210,6 +222,7 @@
                     })
                 )
             ),
+
             // Filtro Ano
             React.createElement('div', { className: 'bg-white rounded-lg shadow-lg p-6 mb-6 border-4 border-yellow-400' },
                 React.createElement('h2', { className: 'text-2xl font-bold text-gray-800 mb-4' }, '1️⃣ Selecione o Ano'),
@@ -237,30 +250,18 @@
             // KPI
             React.createElement('div', { className: 'bg-gradient-to-r from-yellow-400 to-yellow-500 rounded-lg shadow-lg p-8 mb-6 text-black border-2 border-black' },
                 React.createElement('div', { className: 'text-xl font-semibold mb-2' }, `Ordens em ${anoFiltro}`),
-                React.createElement('div', { className: 'text-6xl font-bold' }, statsAno.total.toLocaleString())
+                React.createElement('div', { className: 'text-6xl font-bold' }, statsAtual.total.toLocaleString())
             ),
 
-            // Responsáveis
+            // Responsáveis (atualiza com filtros)
             React.createElement('div', { className: 'bg-white rounded-lg shadow p-6 mb-6 border-2 border-gray-200' },
                 React.createElement('h2', { className: 'text-xl font-bold text-gray-800 mb-4' },
-                    '2️⃣ Selecione o Responsável',
-                    statusFiltro && React.createElement('span', { className: 'text-sm font-normal text-gray-600 ml-2' },
-                        `(mostrando ordens com status: ${statusFiltro})`
-                    )
+                    '2️⃣ Selecione o Responsável'
                 ),
                 React.createElement('div', { className: 'grid grid-cols-1 md:grid-cols-3 gap-4' },
                     responsaveis.map(resp => {
-                        let total, percentagem;
-                        if (statusFiltro) {
-                            const ordensResp = ordens.filter(o => o.ano === anoFiltro && o.responsavel === resp && o.status === statusFiltro);
-                            total = ordensResp.length;
-                            const totalStatus = ordens.filter(o => o.ano === anoFiltro && o.status === statusFiltro).length;
-                            percentagem = totalStatus > 0 ? ((total / totalStatus) * 100).toFixed(1) : 0;
-                        } else {
-                            total = statsAno.byResp[resp] || 0;
-                            percentagem = statsAno.total > 0 ? ((total / statsAno.total) * 100).toFixed(1) : 0;
-                        }
-                        
+                        const total = statsAtual.byResp[resp] || 0;
+                        const percentagem = statsAtual.total > 0 ? ((total / statsAtual.total) * 100).toFixed(1) : 0;
                         const isSelected = responsavelFiltro === resp;
                         
                         return React.createElement('button', {
@@ -274,7 +275,7 @@
                             React.createElement('div', { className: 'text-lg font-bold mb-1' }, resp),
                             React.createElement('div', { className: 'text-3xl font-bold' }, total.toLocaleString()),
                             React.createElement('div', { className: 'text-sm mt-1 flex items-center justify-between' },
-                                React.createElement('span', null, statusFiltro ? `ordens ${statusFiltro}` : `ordens em ${anoFiltro}`),
+                                React.createElement('span', null, `ordens`),
                                 React.createElement('span', { className: 'font-bold text-black bg-yellow-100 px-2 py-1 rounded' }, `${percentagem}%`)
                             )
                         );
@@ -282,18 +283,17 @@
                 )
             ),
 
-            // Concelhos
+            // Concelhos (atualiza com filtros)
             responsavelFiltro && concelhos.length > 0 && React.createElement('div', { className: 'bg-white rounded-lg shadow p-6 mb-6 border-2 border-gray-200' },
                 React.createElement('h2', { className: 'text-xl font-bold text-gray-800 mb-4' }, `Selecione o Concelho (${responsavelFiltro})`),
                 React.createElement('div', { className: 'grid grid-cols-2 md:grid-cols-3 lg:grid-cols-5 gap-3' },
                     concelhos.map(concelho => {
-                        const total = statsAno.byConcelho[concelho] || 0;
+                        const total = statsAtual.byConcelho[concelho] || 0;
                         const isSelected = concelhoFiltro === concelho;
                         return React.createElement('button', {
                             key: concelho,
                             onClick: () => {
                                 setConcelhoFiltro(isSelected ? null : concelho);
-                                setStatusFiltro(null);
                             },
                             className: `p-3 rounded-lg transition-all border-2 ${isSelected ? 'bg-yellow-400 text-black border-black font-bold' : 'bg-gray-50 hover:bg-yellow-50 text-gray-800 border-gray-300'}`
                         },
@@ -304,14 +304,14 @@
                 )
             ),
 
-            // Status
+            // Status (atualiza com filtros)
             React.createElement('div', { className: 'bg-white rounded-lg shadow p-6 mb-6 border-2 border-gray-200' },
                 React.createElement('h2', { className: 'text-xl font-bold text-gray-800 mb-4' }, '3️⃣ Selecione o Status'),
                 React.createElement('div', { className: 'grid grid-cols-2 md:grid-cols-3 lg:grid-cols-5 gap-3' },
                     statusUnicos
-                        .filter(status => (statsAno.byStatus[status] || 0) > 0)
+                        .filter(status => (statsAtual.byStatus[status] || 0) > 0)
                         .map(status => {
-                            const total = statsAno.byStatus[status] || 0;
+                            const total = statsAtual.byStatus[status] || 0;
                             const isSelected = statusFiltro === status;
                             const descricao = statusDescricoes[status] || status;
                             
